@@ -14,17 +14,18 @@ import java.util.Map;
 
 /**
  * Play cache implementation using Redis.
- * 
+ *
  * @author Tim Kral
  */
 public class RedisCacheImpl implements CacheImpl {
 
-	private static RedisCacheImpl uniqueInstance = new RedisCacheImpl();
-	
-	static JedisPool connectionPool;
+    private static RedisCacheImpl uniqueInstance = new RedisCacheImpl();
+
+    static JedisPool connectionPool;
     static ThreadLocal<Jedis> cacheConnection = new ThreadLocal<Jedis>();
-	
-    private RedisCacheImpl() {  }
+
+    private RedisCacheImpl() {
+    }
 
     static RedisCacheImpl getInstance() {
         return uniqueInstance;
@@ -48,7 +49,7 @@ public class RedisCacheImpl implements CacheImpl {
             throw new JedisCheckedException();
         }
     }
-    
+
     public static void closeCacheConnection() throws JedisCheckedException {
         try {
             if (cacheConnection.get() != null) {
@@ -60,9 +61,9 @@ public class RedisCacheImpl implements CacheImpl {
             throw new JedisCheckedException();
         }
     }
-    
-	@Override
-	public void add(String key, Object value, int expiration) {
+
+    @Override
+    public void add(String key, Object value, int expiration) {
         try {
             if (!getCacheConnection().exists(key)) {
                 set(key, value, expiration);
@@ -72,18 +73,21 @@ public class RedisCacheImpl implements CacheImpl {
         }
     }
 
-	@Override
-	public boolean safeAdd(String key, Object value, int expiration) {
-		try {
-			add(key, value, expiration);
-			return true;
-		} catch (Exception e) {
-			return false;
-		}
-	}
+    @Override
+    public boolean safeAdd(String key, Object value, int expiration) {
+        try {
+            if (!getCacheConnection().exists(key)) {
+                set(key, value, expiration);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
-	@Override
-	public void set(String key, Object value, int expiration) {
+    @Override
+    public void set(String key, Object value, int expiration) {
         try {
             Jedis jedis = getCacheConnection();
 
@@ -97,37 +101,37 @@ public class RedisCacheImpl implements CacheImpl {
         }
     }
 
-	private static byte[] toByteArray(Object o) {
-		ObjectOutputStream out = null;
-		try {
-			ByteArrayOutputStream bos = new ByteArrayOutputStream() ;
-			out = new ObjectOutputStream(bos) ;
-			out.writeObject(o);
+    private static byte[] toByteArray(Object o) {
+        ObjectOutputStream out = null;
+        try {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            out = new ObjectOutputStream(bos);
+            out.writeObject(o);
 
-			return bos.toByteArray();
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		} finally {
-			try {
-				if (out != null) out.close();
-			} catch (IOException e2) {
-				throw new RuntimeException(e2);
-			}
-		}
-	}
-	
-	@Override
-	public boolean safeSet(String key, Object value, int expiration) {
-		try {
-			set(key, value, expiration);
-			return true;
-		} catch (Exception e) {
-			return false;
-		}
-	}
+            return bos.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        } finally {
+            try {
+                if (out != null) out.close();
+            } catch (IOException e2) {
+                throw new RuntimeException(e2);
+            }
+        }
+    }
 
-	@Override
-	public void replace(String key, Object value, int expiration) {
+    @Override
+    public boolean safeSet(String key, Object value, int expiration) {
+        try {
+            set(key, value, expiration);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Override
+    public void replace(String key, Object value, int expiration) {
         try {
             if (getCacheConnection().exists(key)) {
                 set(key, value, expiration);
@@ -137,18 +141,21 @@ public class RedisCacheImpl implements CacheImpl {
         }
     }
 
-	@Override
-	public boolean safeReplace(String key, Object value, int expiration) {
-		try {
-			replace(key, value, expiration);
-			return true;
-		} catch (Exception e) {
-			return false;
-		}
-	}
+    @Override
+    public boolean safeReplace(String key, Object value, int expiration) {
+        try {
+            if (getCacheConnection().exists(key)) {
+                set(key, value, expiration);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
-	@Override
-	public Object get(String key) {
+    @Override
+    public Object get(String key) {
         try {
             byte[] bytes = getCacheConnection().get(key.getBytes());
             if (bytes == null) return null;
@@ -160,53 +167,53 @@ public class RedisCacheImpl implements CacheImpl {
         }
     }
 
-	private static Object fromByteArray(byte[] bytes) {
-		
-		ObjectInputStream in = null;
-		try {
-			in = new ObjectInputStream(new ByteArrayInputStream(bytes)) {
-               @Override
+    private static Object fromByteArray(byte[] bytes) {
+
+        ObjectInputStream in = null;
+        try {
+            in = new ObjectInputStream(new ByteArrayInputStream(bytes)) {
+                @Override
                 protected Class<?> resolveClass(ObjectStreamClass desc)
                         throws IOException, ClassNotFoundException {
                     return Class.forName(desc.getName(), false, Play.classloader);
                 }
             };
-			return in.readObject();
-		} catch (Exception e) {
-			throw new RuntimeException(e);
-		} finally {
-			try {
-				if (in != null) in.close();
-			} catch (IOException e2) {
-				throw new RuntimeException(e2);
-			}
-		}
-	}
-	
-	@Override
-	public Map<String, Object> get(String[] keys) {
-		Map<String, Object> result = new HashMap<String, Object>(keys.length);
+            return in.readObject();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            try {
+                if (in != null) in.close();
+            } catch (IOException e2) {
+                throw new RuntimeException(e2);
+            }
+        }
+    }
+
+    @Override
+    public Map<String, Object> get(String[] keys) {
+        Map<String, Object> result = new HashMap<String, Object>(keys.length);
         for (String key : keys) {
             result.put(key, get(key));
         }
         return result;
-	}
+    }
 
-	@Override
-	public long incr(String key, int by) {
-		Object cacheValue = get(key);
-		long sum;
+    @Override
+    public long incr(String key, int by) {
+        Object cacheValue = get(key);
+        long sum;
         try {
             if (cacheValue == null) {
                 Long newCacheValueLong = Long.valueOf(0L + by);
                 getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueLong));
                 sum = newCacheValueLong.longValue();
             } else if (cacheValue instanceof Integer) {
-                Integer newCacheValueInteger = (Integer)cacheValue + by;
+                Integer newCacheValueInteger = (Integer) cacheValue + by;
                 getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueInteger));
                 sum = newCacheValueInteger.longValue();
             } else if (cacheValue instanceof Long) {
-                Long newCacheValueLong = (Long)cacheValue + by;
+                Long newCacheValueLong = (Long) cacheValue + by;
                 getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueLong));
                 sum = newCacheValueLong.longValue();
             } else {
@@ -217,23 +224,23 @@ public class RedisCacheImpl implements CacheImpl {
         }
 
         return sum;
-	}
+    }
 
-	@Override
-	public long decr(String key, int by) {
-		Object cacheValue = get(key);
-		long difference;
+    @Override
+    public long decr(String key, int by) {
+        Object cacheValue = get(key);
+        long difference;
         try {
             if (cacheValue == null) {
                 Long newCacheValueLong = Long.valueOf(0L - by);
                 getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueLong));
                 difference = newCacheValueLong.longValue();
             } else if (cacheValue instanceof Integer) {
-                Integer newCacheValueInteger = (Integer)cacheValue - by;
+                Integer newCacheValueInteger = (Integer) cacheValue - by;
                 getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueInteger));
                 difference = newCacheValueInteger.longValue();
             } else if (cacheValue instanceof Long) {
-                Long newCacheValueLong = (Long)cacheValue - by;
+                Long newCacheValueLong = (Long) cacheValue - by;
                 getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueLong));
                 difference = newCacheValueLong.longValue();
             } else {
@@ -244,40 +251,40 @@ public class RedisCacheImpl implements CacheImpl {
         }
 
         return difference;
-	}
+    }
 
-	@Override
-	public void clear() {
+    @Override
+    public void clear() {
         try {
             getCacheConnection().flushDB();
         } catch (JedisCheckedException e) {
             Logger.error(e, "Couldn't clear cache due to error: " + e.getMessage());
         }
         // TODO: check return status code
-	}
+    }
 
-	@Override
-	public void delete(String key) {
+    @Override
+    public void delete(String key) {
         try {
             getCacheConnection().del(key);
         } catch (JedisCheckedException e) {
             Logger.error(e, "Couldn't delete key " + key + " due to error: " + e.getMessage());
         }
         // TODO: check return status code
-	}
+    }
 
-	@Override
-	public boolean safeDelete(String key) {
-		try {
-			delete(key);
-			return true;
-		} catch (Exception e) {
-			return false;
-		}
-	}
+    @Override
+    public boolean safeDelete(String key) {
+        try {
+            delete(key);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
-	@Override
-	public void stop() {
+    @Override
+    public void stop() {
         try {
             if (Play.configuration.getProperty("redis.cache.flushallonstop", "true").equals("true")) {
                 getCacheConnection().flushAll();
@@ -286,6 +293,6 @@ public class RedisCacheImpl implements CacheImpl {
             Logger.error(e, e.getMessage());
         }
         connectionPool.destroy();
-	}
+    }
 
 }
