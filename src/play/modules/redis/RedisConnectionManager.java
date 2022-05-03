@@ -2,8 +2,6 @@ package play.modules.redis;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.ShardedJedis;
-import redis.clients.jedis.ShardedJedisPool;
 import redis.clients.jedis.exceptions.JedisConnectionException;
 
 /**
@@ -14,13 +12,10 @@ import redis.clients.jedis.exceptions.JedisConnectionException;
 public class RedisConnectionManager {
 
 	static JedisPool connectionPool;  // Single instance pool
-    static ShardedJedisPool shardedConnectionPool;  // Sharded instance pool
-    
     static ThreadLocal<Jedis> redisConnection = new ThreadLocal<Jedis>();
-    static ThreadLocal<ShardedJedis> shardedConnection = new ThreadLocal<ShardedJedis>();
-    
+
     public static boolean isSharded() {
-    	return shardedConnectionPool != null;
+    	return false;
     }
     
     public static Jedis getRawConnection() {
@@ -46,9 +41,7 @@ public class RedisConnectionManager {
     	if (!isSharded()) {
     		return getRawConnectionInternal();
     	} else {
-    		ShardedJedis sjedis = getRawShardedConnectionInternal();
-    		Jedis jedis = sjedis.getShard(key);
-    		return jedis;
+			throw new JedisConnectionException("Cannot retrieve raw connection from sharded instance. Try getRawConnectionFromShard(key).");
     	}
     }
     
@@ -56,23 +49,10 @@ public class RedisConnectionManager {
     	if (!isSharded()) {
     		return getRawConnectionInternal();
     	} else {
-    		ShardedJedis sjedis = getRawShardedConnectionInternal();
-    		Jedis jedis = sjedis.getShard(key);
-    		return jedis;
+			throw new JedisConnectionException("Cannot retrieve raw connection from sharded instance. Try getRawConnectionFromShard(key).");
     	}
     }
-    
-    static ShardedJedis getRawShardedConnectionInternal() {
-    	// Try to use a sharded connection already leased in the request
-		if (shardedConnection.get() != null) {
-			return shardedConnection.get();
-		}
-	
-		ShardedJedis sjedis = shardedConnectionPool.getResource();
-		shardedConnection.set(sjedis);
-		return sjedis;
-    }
-    
+
     /**
      * Close the last connection that was leased.
      */
@@ -80,9 +60,6 @@ public class RedisConnectionManager {
         if (redisConnection.get() != null) {
         	connectionPool.returnResource(redisConnection.get());
         	redisConnection.remove();
-        } else if (shardedConnection.get() != null) {
-        	shardedConnectionPool.returnResource(shardedConnection.get());
-        	shardedConnection.remove();
         }
     }    
     /**
@@ -91,8 +68,6 @@ public class RedisConnectionManager {
     public static void destroy() {
     	if (!isSharded()) {
     		connectionPool.destroy();
-    	} else {
-    		shardedConnectionPool.destroy();
     	}
     }
 }

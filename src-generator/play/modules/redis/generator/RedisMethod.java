@@ -12,14 +12,14 @@ import javassist.NotFoundException;
  */
 class RedisMethod implements Comparable<Object> {
 	
-	private static final CtClass SHARDED_JEDIS_CLASS;
-	static {
-		try {
-			SHARDED_JEDIS_CLASS = ClassPool.getDefault().get("redis.clients.jedis.ShardedJedis");
-		} catch (NotFoundException e) {
-			throw new RuntimeException(e);
-		}
-	}
+//	private static final CtClass SHARDED_JEDIS_CLASS;
+//	static {
+//		try {
+//			SHARDED_JEDIS_CLASS = ClassPool.getDefault().get("redis.clients.jedis.ShardedJedis");
+//		} catch (NotFoundException e) {
+//			throw new RuntimeException(e);
+//		}
+//	}
 	
 	private final CtMethod rawMethod;
 	private boolean isAvailableForShards;
@@ -29,9 +29,9 @@ class RedisMethod implements Comparable<Object> {
 		
 		// TODO: Better test for has method. 
 		try {
-			this.isAvailableForShards =
-				SHARDED_JEDIS_CLASS.getMethod(rawMethod.getName(), rawMethod.getMethodInfo().getDescriptor()) != null;
-		} catch (NotFoundException e) {
+			this.isAvailableForShards = false;
+				//SHARDED_JEDIS_CLASS.getMethod(rawMethod.getName(), rawMethod.getMethodInfo().getDescriptor()) != null;
+		} catch (Exception e) {
 			this.isAvailableForShards = false;
 		}
 		
