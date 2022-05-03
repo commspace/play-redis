@@ -15,8 +15,8 @@ public class RedisCacheMonitor extends Controller {
 	public static void cacheInstance() throws RedisCacheImpl.JedisCheckedException {
 		if (RedisPlugin.isRedisCacheEnabled()) {
 			Map<String, Object> cacheInstanceInfo = new HashMap<String, Object>(2);
-			cacheInstanceInfo.put("host", RedisCacheImpl.getCacheConnection().getClient().getHost());
-			cacheInstanceInfo.put("port", RedisCacheImpl.getCacheConnection().getClient().getPort());
+//			cacheInstanceInfo.put("host", RedisCacheImpl.getCacheConnection().getClient().getHost());
+//			cacheInstanceInfo.put("port", RedisCacheImpl.getCacheConnection().getClient().getPort());
 			renderJSON(cacheInstanceInfo);
 		}
 	}
