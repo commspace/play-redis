@@ -15,110 +15,119 @@ import redis.clients.jedis.Protocol;
 
 /**
  * Play plugin for Redis.
- * 
+ *
  * @author Tim Kral
  */
 public class RedisPlugin extends PlayPlugin {
 
-	private boolean createdRedisCache;
-	private boolean createdRedis;
-	
-	public static boolean isRedisCacheEnabled() {
-		return Play.configuration.getProperty("redis.cache", "disabled").equals("enabled");
-	}
-	
-	@Override
-	public void onConfigurationRead() {
-		if (isRedisCacheEnabled()) {
-	    	if (Play.configuration.containsKey("redis.cache.url")) {
-	    	    String redisCacheUrl = Play.configuration.getProperty("redis.cache.url");
-	    	    Logger.info("Connecting to redis cache with %s", redisCacheUrl);
-	    	    RedisConnectionInfo redisConnInfo = new RedisConnectionInfo(redisCacheUrl, Play.configuration.getProperty("redis.cache.timeout"));
-	    	    
-	    	    RedisCacheImpl.connectionPool = redisConnInfo.getConnectionPool();
-	    	    Cache.forcedCacheImpl = RedisCacheImpl.getInstance();
-	    	    createdRedisCache = true;
-	    	} else {
-	    		throw new ConfigurationException("Bad configuration for redis cache: missing redis.cache.url");
-	    	}
-		}
-	}
-	
-	@Override
-	public void onApplicationStart() {
-    	if (Play.configuration.containsKey("redis.url")) {
-    	    String redisUrl = Play.configuration.getProperty("redis.url");
-    	    Logger.info("Connecting to redis with %s", redisUrl);
-    	    RedisConnectionInfo redisConnInfo = new RedisConnectionInfo(redisUrl, Play.configuration.getProperty("redis.timeout"));
-    	    
-        	RedisConnectionManager.connectionPool = redisConnInfo.getConnectionPool();
-        	createdRedis = true;
-    	} else  {
-    		if (!createdRedisCache) Logger.warn("No redis.url found in configuration. Redis will not be available.");
-    	}
-    	
-	}
-	
-	@Override
-	public void onApplicationStop() {
-		// Redis cache is destroyed in Cache.stop (see Play.stop)
-		if (createdRedis) RedisConnectionManager.destroy();
-	}
-	
+    private boolean createdRedisCache;
+    private boolean createdRedis;
+
+    public static boolean isRedisCacheEnabled() {
+        return Play.configuration.getProperty("redis.cache", "disabled").equals("enabled");
+    }
+
+
+    @Override
+    public void onConfigurationRead() {
+        if (isRedisCacheEnabled()) {
+            if (Play.configuration.containsKey("redis.cache.url")) {
+                String redisCacheUrl = Play.configuration.getProperty("redis.cache.url");
+                Logger.info("Connecting to redis cache with %s", redisCacheUrl);
+                RedisConnectionInfo redisConnInfo = new RedisConnectionInfo(redisCacheUrl, Play.configuration.getProperty("redis.cache.timeout"));
+
+                RedisCacheImpl.connectionPool = redisConnInfo.getConnectionPool();
+                Cache.forcedCacheImpl = RedisCacheImpl.getInstance();
+                createdRedisCache = true;
+            } else {
+                throw new ConfigurationException("Bad configuration for redis cache: missing redis.cache.url");
+            }
+        }
+    }
+
+    @Override
+    public void onApplicationStart() {
+        if (Play.configuration.containsKey("redis.url")) {
+            String redisUrl = Play.configuration.getProperty("redis.url");
+            Logger.info("Connecting to redis with %s", redisUrl);
+            RedisConnectionInfo redisConnInfo = new RedisConnectionInfo(redisUrl, Play.configuration.getProperty("redis.timeout"));
+
+            RedisConnectionManager.connectionPool = redisConnInfo.getConnectionPool();
+            createdRedis = true;
+        } else {
+            if (!createdRedisCache) Logger.warn("No redis.url found in configuration. Redis will not be available.");
+        }
+
+    }
+
+    @Override
+    public void onApplicationStop() {
+        // Redis cache is destroyed in Cache.stop (see Play.stop)
+        if (createdRedis) RedisConnectionManager.destroy();
+    }
+
     @Override
     public void invocationFinally() {
-        try {
-            if (createdRedisCache) RedisCacheImpl.closeCacheConnection();
-        } catch (RedisCacheImpl.JedisCheckedException e) {
-            Logger.error(e, e.getMessage());
-        }
         if (createdRedis) RedisConnectionManager.closeConnection();
     }
-    
+
     private static class RedisConnectionInfo {
-    	private final String host;
-    	private final int port;
-    	private final String password;
-    	private final int timeout;
-    	
-    	RedisConnectionInfo(String redisUrl, String timeoutStr) {
-    	    URI redisUri;
-    		try {
-    	        redisUri = new URI(redisUrl);
-    	    } catch (URISyntaxException e) {
-    	        throw new ConfigurationException("Bad configuration for redis: unable to parse redis url (" + redisUrl + ")");
-    	    }
-    		
-    	    host = redisUri.getHost();
-    	    
-        	if (redisUri.getPort() > 0) {
-        		port = redisUri.getPort();
-        	} else {
-        	    port = Protocol.DEFAULT_PORT;
-        	}
-        	
-        	String userInfo = redisUri.getUserInfo();
-        	if (userInfo != null) {
-        	    String[] parsedUserInfo = userInfo.split(":");
-        	    password = parsedUserInfo[parsedUserInfo.length - 1];
-        	} else {
-        		password = null;
-        	}
-        	
-        	if (timeoutStr == null) {
-        		timeout = Protocol.DEFAULT_TIMEOUT;
-        	} else {
-        		timeout = Integer.parseInt(timeoutStr);
-        	}
-    	}
-    	
-    	JedisPool getConnectionPool() {
-    		if (password == null) {
-    			return new JedisPool(new JedisPoolConfig(), host, port, timeout);
-    		}
-    		
-    		return new JedisPool(new JedisPoolConfig(), host, port, timeout, password);
-    	}
+        private final String host;
+        private final int port;
+        private final String password;
+        private final int timeout;
+
+        RedisConnectionInfo(String redisUrl, String timeoutStr) {
+            URI redisUri;
+            try {
+                redisUri = new URI(redisUrl);
+            } catch (URISyntaxException e) {
+                throw new ConfigurationException("Bad configuration for redis: unable to parse redis url (" + redisUrl + ")");
+            }
+
+            host = redisUri.getHost();
+
+            if (redisUri.getPort() > 0) {
+                port = redisUri.getPort();
+            } else {
+                port = Protocol.DEFAULT_PORT;
+            }
+
+            String userInfo = redisUri.getUserInfo();
+            if (userInfo != null) {
+                String[] parsedUserInfo = userInfo.split(":");
+                password = parsedUserInfo[parsedUserInfo.length - 1];
+            } else {
+                password = null;
+            }
+
+            if (timeoutStr == null) {
+                timeout = Protocol.DEFAULT_TIMEOUT;
+            } else {
+                timeout = Integer.parseInt(timeoutStr);
+            }
+        }
+
+        JedisPool getConnectionPool() {
+            JedisPoolConfig config = new JedisPoolConfig();
+            String poolMaxTotal = Play.configuration.getProperty("redis.connectionPool.maxTotal", "8");
+            String poolMaxIdle = Play.configuration.getProperty("redis.connectionPool.maxIdle","8");
+            String poolMinIdle = Play.configuration.getProperty("redis.connectionPool.minIdle","8");
+            try {
+                Logger.info(String.format("Configuring redis connection pool with maxTotal=%s, maxIdle=%s, minIdle=%s",poolMaxTotal,poolMaxIdle,poolMinIdle));
+                config.setMaxTotal(Integer.parseInt(poolMaxTotal));
+                config.setMaxIdle(Integer.parseInt(poolMaxIdle));
+                config.setMinIdle(Integer.parseInt(poolMinIdle));
+            } catch (NumberFormatException nfe) {
+                Logger.error(nfe,"Can't configure redis connection pool parameter");
+            }
+
+            if (password == null) {
+                return new JedisPool(config, host, port, timeout);
+            }
+
+            return new JedisPool(config, host, port, timeout, password);
+        }
 
     }
 }

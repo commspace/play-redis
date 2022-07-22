@@ -1,16 +1,15 @@
 package play.modules.redis;
 
-import play.Logger;
 import play.Play;
 import play.cache.CacheImpl;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.exceptions.JedisDataException;
-import redis.clients.jedis.exceptions.JedisException;
 
 import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Play cache implementation using Redis.
@@ -19,86 +18,53 @@ import java.util.Map;
  */
 public class RedisCacheImpl implements CacheImpl {
 
-    private static RedisCacheImpl uniqueInstance = new RedisCacheImpl();
+    private static final RedisCacheImpl uniqueInstance = new RedisCacheImpl();
 
     static JedisPool connectionPool;
-    static ThreadLocal<Jedis> cacheConnection = new ThreadLocal<Jedis>();
 
     private RedisCacheImpl() {
     }
 
-    static RedisCacheImpl getInstance() {
+    public static RedisCacheImpl getInstance() {
         return uniqueInstance;
-    }
-
-    public static class JedisCheckedException extends Exception {
-
-    }
-
-    public static Jedis getCacheConnection() throws JedisCheckedException {
-        try {
-            if (cacheConnection.get() != null) {
-                return cacheConnection.get();
-            }
-
-            Jedis connection = connectionPool.getResource();
-            cacheConnection.set(connection);
-            return connection;
-        } catch (JedisException e) {
-            Logger.warn(e, e.getMessage());
-            throw new JedisCheckedException();
-        }
-    }
-
-    public static void closeCacheConnection() throws JedisCheckedException {
-        try {
-            if (cacheConnection.get() != null) {
-                connectionPool.returnResource(cacheConnection.get());
-                cacheConnection.remove();
-            }
-        } catch (JedisException e) {
-            Logger.warn(e, e.getMessage());
-            throw new JedisCheckedException();
-        }
     }
 
     @Override
     public void add(String key, Object value, int expiration) {
-        try {
-            if (!getCacheConnection().exists(key)) {
-                set(key, value, expiration);
+        try (Jedis jedis = connectionPool.getResource()) {
+            if (!exists(jedis, key)) {
+                set(jedis, key, value, expiration);
             }
-        } catch (JedisCheckedException e) {
-            Logger.warn("Unable to add " + key + " to redis cache due to previous exception.");
         }
     }
 
     @Override
     public boolean safeAdd(String key, Object value, int expiration) {
-        try {
-            if (!getCacheConnection().exists(key)) {
-                set(key, value, expiration);
-                return true;
-            }
-            return false;
+        try (Jedis jedis = connectionPool.getResource()) {
+            set(jedis, key, value, expiration);
+            return true;
         } catch (Exception e) {
             return false;
         }
     }
 
+    private boolean exists(Jedis jedis, String key) {
+        return jedis.exists(key.getBytes());
+    }
+
     @Override
     public void set(String key, Object value, int expiration) {
-        try {
-            Jedis jedis = getCacheConnection();
-
-            // Serialize to a byte array
-            byte[] bytes = toByteArray(value);
-
-            jedis.set(key.getBytes(), bytes);
-            jedis.expire(key, expiration);
-        } catch (JedisCheckedException e) {
-            Logger.warn("Unable to set " + key + " to redis cache due to previous exception.");
+        try (Jedis jedis = connectionPool.getResource()) {
+            set(jedis, key, value, expiration);
         }
+    }
+
+    private void set(Jedis jedis, String key, Object value, int expiration) {
+        jedis.setex(key.getBytes(), expiration, toByteArray(value));
+    }
+
+    private void set(Jedis jedis, String key, Object value) {
+        jedis.set(key.getBytes(), toByteArray(value));
     }
 
     private static byte[] toByteArray(Object o) {
@@ -132,20 +98,18 @@ public class RedisCacheImpl implements CacheImpl {
 
     @Override
     public void replace(String key, Object value, int expiration) {
-        try {
-            if (getCacheConnection().exists(key)) {
-                set(key, value, expiration);
+        try (Jedis jedis = connectionPool.getResource()) {
+            if (exists(jedis, key)) {
+                set(jedis, key, value, expiration);
             }
-        } catch (JedisCheckedException e) {
-            Logger.error(e, e.getMessage());
         }
     }
 
     @Override
     public boolean safeReplace(String key, Object value, int expiration) {
-        try {
-            if (getCacheConnection().exists(key)) {
-                set(key, value, expiration);
+        try (Jedis jedis = connectionPool.getResource()) {
+            if (exists(jedis, key)) {
+                set(jedis, key, value, expiration);
                 return true;
             }
             return false;
@@ -156,15 +120,17 @@ public class RedisCacheImpl implements CacheImpl {
 
     @Override
     public Object get(String key) {
-        try {
-            byte[] bytes = getCacheConnection().get(key.getBytes());
-            if (bytes == null) return null;
-
-            return fromByteArray(bytes);
-        } catch (JedisCheckedException e) {
-            Logger.warn("Unable to get " + key + " to redis cache due to previous exception, returning null.");
-            return null;
+        try (Jedis jedis = connectionPool.getResource()) {
+            return get(jedis, key);
         }
+    }
+
+    private Object get(Jedis jedis, String key) {
+        byte[] bytes = jedis.get(key.getBytes());
+        if (bytes == null)
+            return null;
+        else
+            return fromByteArray(bytes);
     }
 
     private static Object fromByteArray(byte[] bytes) {
@@ -173,8 +139,7 @@ public class RedisCacheImpl implements CacheImpl {
         try {
             in = new ObjectInputStream(new ByteArrayInputStream(bytes)) {
                 @Override
-                protected Class<?> resolveClass(ObjectStreamClass desc)
-                        throws IOException, ClassNotFoundException {
+                protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
                     return Class.forName(desc.getName(), false, Play.classloader);
                 }
             };
@@ -201,76 +166,60 @@ public class RedisCacheImpl implements CacheImpl {
 
     @Override
     public long incr(String key, int by) {
-        Object cacheValue = get(key);
-        long sum;
-        try {
+        try (Jedis jedis = connectionPool.getResource()) {
+            Object cacheValue = get(jedis, key);
+            long sum;
             if (cacheValue == null) {
-                Long newCacheValueLong = Long.valueOf(0L + by);
-                getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueLong));
-                sum = newCacheValueLong.longValue();
+                set(jedis, key, by);
+                return by;
             } else if (cacheValue instanceof Integer) {
                 Integer newCacheValueInteger = (Integer) cacheValue + by;
-                getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueInteger));
-                sum = newCacheValueInteger.longValue();
+                set(jedis, key, newCacheValueInteger);
+                return newCacheValueInteger.longValue();
             } else if (cacheValue instanceof Long) {
                 Long newCacheValueLong = (Long) cacheValue + by;
-                getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueLong));
-                sum = newCacheValueLong.longValue();
+                set(jedis, key, newCacheValueLong);
+                return newCacheValueLong;
             } else {
                 throw new JedisDataException("Cannot incr on non-integer value (key: " + key + ")");
             }
-        } catch (JedisCheckedException e) {
-            throw new JedisException("Cannot incr due to server problem (key: " + key + ")");
         }
-
-        return sum;
     }
 
     @Override
     public long decr(String key, int by) {
-        Object cacheValue = get(key);
         long difference;
-        try {
+        try (Jedis jedis = connectionPool.getResource()) {
+            Object cacheValue = get(jedis,key);
             if (cacheValue == null) {
-                Long newCacheValueLong = Long.valueOf(0L - by);
-                getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueLong));
-                difference = newCacheValueLong.longValue();
+                set(jedis,key, -by);
+                return -by;
             } else if (cacheValue instanceof Integer) {
                 Integer newCacheValueInteger = (Integer) cacheValue - by;
-                getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueInteger));
-                difference = newCacheValueInteger.longValue();
+                set(jedis,key, newCacheValueInteger);
+                return newCacheValueInteger.longValue();
             } else if (cacheValue instanceof Long) {
                 Long newCacheValueLong = (Long) cacheValue - by;
-                getCacheConnection().set(key.getBytes(), toByteArray(newCacheValueLong));
-                difference = newCacheValueLong.longValue();
+                set(jedis,key, newCacheValueLong);
+                return newCacheValueLong;
             } else {
                 throw new JedisDataException("Cannot decr on non-integer value (key: " + key + ")");
             }
-        } catch (JedisCheckedException e) {
-            throw new JedisException("Cannot decr due to server problem (key: " + key + ")");
         }
-
-        return difference;
     }
 
     @Override
     public void clear() {
-        try {
-            getCacheConnection().flushDB();
-        } catch (JedisCheckedException e) {
-            Logger.error(e, "Couldn't clear cache due to error: " + e.getMessage());
+        try (Jedis jedis = connectionPool.getResource()) {
+            jedis.flushDB();
         }
-        // TODO: check return status code
     }
 
     @Override
     public void delete(String key) {
-        try {
-            getCacheConnection().del(key);
-        } catch (JedisCheckedException e) {
-            Logger.error(e, "Couldn't delete key " + key + " due to error: " + e.getMessage());
+        try (Jedis jedis = connectionPool.getResource()) {
+            jedis.del(key.getBytes());
         }
-        // TODO: check return status code
     }
 
     @Override
@@ -285,14 +234,23 @@ public class RedisCacheImpl implements CacheImpl {
 
     @Override
     public void stop() {
-        try {
+        try (Jedis jedis = connectionPool.getResource()) {
             if (Play.configuration.getProperty("redis.cache.flushallonstop", "true").equals("true")) {
-                getCacheConnection().flushAll();
+                jedis.flushAll();
             }
-        } catch (JedisCheckedException e) {
-            Logger.error(e, e.getMessage());
         }
-        connectionPool.destroy();
+        connectionPool.close();
     }
 
+    public String info() {
+        try (Jedis jedis = connectionPool.getResource()) {
+            return jedis.info();
+        }
+    }
+
+    public Set<String> keys(String pattern) {
+        try (Jedis jedis = connectionPool.getResource()) {
+            return jedis.keys(pattern);
+        }
+    }
 }
