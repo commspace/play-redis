@@ -1,5 +1,6 @@
 package play.modules.redis;
 
+import play.Logger;
 import play.Play;
 import play.cache.CacheImpl;
 import redis.clients.jedis.Jedis;
@@ -64,6 +65,10 @@ public class RedisCacheImpl implements CacheImpl {
     }
 
     private void set(Jedis jedis, String key, Object value) {
+        if (Logger.isDebugEnabled())
+            Logger.debug("Setting redis cache key=%s", key);
+        if (Logger.isTraceEnabled())
+            Logger.trace("Setting redis cache value=%s",value);
         jedis.set(key.getBytes(), toByteArray(value));
     }
 
@@ -126,11 +131,18 @@ public class RedisCacheImpl implements CacheImpl {
     }
 
     private Object get(Jedis jedis, String key) {
+        if (Logger.isDebugEnabled())
+            Logger.debug("Getting redis cache key=%s",key);
         byte[] bytes = jedis.get(key.getBytes());
-        if (bytes == null)
+        if (bytes == null) {
+            if (Logger.isDebugEnabled())
+                Logger.debug("no redis cache entry found for key=%s",key);
             return null;
-        else
+        } else {
+            if (Logger.isTraceEnabled())
+                Logger.trace("redis cache entry found for key=%s, value=%s",key,fromByteArray(bytes));
             return fromByteArray(bytes);
+        }
     }
 
     private static Object fromByteArray(byte[] bytes) {
